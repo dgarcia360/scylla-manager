@@ -18,18 +18,28 @@ func toStr(r rune) string {
 	return string([]rune{r})
 }
 
-type extTaskID struct {
+type taskInfo struct {
 	ClusterID uuid.UUID
+	TaskType  TaskType
 	TaskID    uuid.UUID
 	TaskName  string
 }
 
-func (eid extTaskID) key() string {
-	return strings.ToLower(eid.TaskID.String())
+func newTaskInfoFromTask(t *Task) taskInfo {
+	return taskInfo{
+		ClusterID: t.ClusterID,
+		TaskType:  t.Type,
+		TaskID:    t.ID,
+		TaskName:  t.Name,
+	}
 }
 
-func (eid extTaskID) nameKey() string {
-	return strings.ToLower(toStr(taskNamePfx) + eid.TaskName + toStr(taskNameSep) + eid.ClusterID.String())
+func (ti taskInfo) key() string {
+	return strings.ToLower(ti.TaskID.String())
+}
+
+func (ti taskInfo) nameKey() string {
+	return strings.ToLower(toStr(taskNamePfx) + ti.TaskName + toStr(taskNameSep) + ti.ClusterID.String())
 }
 
 type resolver struct {
@@ -42,39 +52,39 @@ func newResolver() resolver {
 	}
 }
 
-func (r resolver) Put(eid extTaskID) {
+func (r resolver) Put(ti taskInfo) {
 	// Remove old name node
-	node, ok := r.cache.Find(eid.key())
+	node, ok := r.cache.Find(ti.key())
 	if ok {
-		old := node.Meta().(extTaskID)
+		old := node.Meta().(taskInfo)
 		if old.TaskName != "" {
 			r.cache.Remove(old.nameKey())
 		}
 	}
 
-	r.cache.Add(eid.key(), eid)
-	if eid.TaskName != "" {
-		r.cache.Add(eid.nameKey(), eid)
+	r.cache.Add(ti.key(), ti)
+	if ti.TaskName != "" {
+		r.cache.Add(ti.nameKey(), ti)
 	}
 }
 
 func (r resolver) Remove(taskID uuid.UUID) {
-	node, ok := r.cache.Find(extTaskID{TaskID: taskID}.key())
+	node, ok := r.cache.Find(taskInfo{TaskID: taskID}.key())
 	if !ok {
 		return
 	}
-	eid := node.Meta().(extTaskID)
+	ti := node.Meta().(taskInfo)
 
-	r.cache.Remove(eid.key())
-	if eid.TaskName != "" {
-		r.cache.Remove(eid.nameKey())
+	r.cache.Remove(ti.key())
+	if ti.TaskName != "" {
+		r.cache.Remove(ti.nameKey())
 	}
 }
 
-func (r resolver) Find(pre string) (extTaskID, bool) {
+func (r resolver) Find(pre string) (taskInfo, bool) {
 	// Find by ID
 	if node := leafNode(findNode(r.cache.Root(), []rune(pre))); node != nil {
-		return node.Meta().(extTaskID), true
+		return node.Meta().(taskInfo), true
 	}
 
 	// Find by name
@@ -85,7 +95,7 @@ func (r resolver) Find(pre string) (extTaskID, bool) {
 		node = leafNode(node)
 	}
 	if node != nil {
-		return node.Meta().(extTaskID), true
+		return node.Meta().(taskInfo), true
 	}
-	return extTaskID{}, false
+	return taskInfo{}, false
 }
