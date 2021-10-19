@@ -67,7 +67,7 @@ func (t *TaskType) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func (t TaskType) ignoreSuspended() bool {
+func (t TaskType) isHealthCheck() bool {
 	switch t {
 	case HealthCheckAlternatorTask, HealthCheckCQLTask, HealthCheckRESTTask:
 		return true

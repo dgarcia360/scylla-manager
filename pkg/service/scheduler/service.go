@@ -145,7 +145,7 @@ func (s *Service) LoadTasks(ctx context.Context) error {
 		if err != nil {
 			return errors.Wrap(err, "fix last run status")
 		}
-		if t.Type.ignoreSuspended() || !s.IsSuspended(ctx, t.ClusterID) {
+		if t.Type.isHealthCheck() || !s.IsSuspended(ctx, t.ClusterID) {
 			s.schedule(ctx, t, ab)
 		}
 		return nil
@@ -350,7 +350,7 @@ func (s *Service) schedule(ctx context.Context, t *Task, run bool) {
 }
 
 func (s *Service) newScheduler(clusterID uuid.UUID) *scheduler.Scheduler {
-	l := scheduler.NewScheduler(now, s.run, s.logger.Named(clusterID.String()[0:8]))
+	l := scheduler.NewScheduler(now, s.run, schedulerListener{s.logger.Named(clusterID.String()[0:8])})
 	go l.Start(context.Background())
 	return l
 }
@@ -381,6 +381,7 @@ func (s *Service) run(ctx scheduler.RunContext) (runErr error) {
 	if err := s.putRun(r); err != nil {
 		return errors.Wrap(err, "put run")
 	}
+	s.metrics.BeginRun(ti.ClusterID, ti.TaskType.String(), ti.TaskID)
 
 	defer func() {
 		r.Status = statusFromError(runErr)
@@ -397,6 +398,7 @@ func (s *Service) run(ctx scheduler.RunContext) (runErr error) {
 				"error", err,
 			)
 		}
+		s.metrics.EndRun(ti.ClusterID, ti.TaskType.String(), ti.TaskID, r.Status.String())
 	}()
 
 	if ctx.Properties == nil {
@@ -406,14 +408,12 @@ func (s *Service) run(ctx scheduler.RunContext) (runErr error) {
 		ctx.Properties = jsonutil.Set(ctx.Properties, "continue", false)
 	}
 	if d != nil {
-		p, err :=
-			d(ctx, ti.ClusterID, ti.TaskID, ctx.Properties)
+		p, err := d(ctx, ti.ClusterID, ti.TaskID, ctx.Properties)
 		if err != nil {
 			return errors.Wrap(err, "decorate properties")
 		}
 		ctx.Properties = p
 	}
-
 	return s.mustRunner(ti.TaskType).Run(ctx.Context, ti.ClusterID, ti.TaskID, r.ID, ctx.Properties)
 }
 
@@ -477,18 +477,18 @@ func (s *Service) DeleteTask(ctx context.Context, t *Task) error {
 		return err
 	}
 
-	s.logger.Info(ctx, "Task deleted",
-		"cluster_id", t.ClusterID,
-		"task_type", t.Type,
-		"task_id", t.ID,
-	)
-
 	s.mu.Lock()
 	l, lok := s.scheduler[t.ClusterID]
 	s.mu.Unlock()
 	if lok {
 		l.Unschedule(ctx, t.ID)
 	}
+
+	s.logger.Info(ctx, "Task deleted",
+		"cluster_id", t.ClusterID,
+		"task_type", t.Type,
+		"task_id", t.ID,
+	)
 	return nil
 }
 
