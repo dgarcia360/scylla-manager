@@ -14,7 +14,6 @@ import (
 	"github.com/scylladb/scylla-manager/pkg/service"
 	"github.com/scylladb/scylla-manager/pkg/store"
 	"github.com/scylladb/scylla-manager/pkg/util/duration"
-	"github.com/scylladb/scylla-manager/pkg/util/timeutc"
 	"github.com/scylladb/scylla-manager/pkg/util/uuid"
 	"go.uber.org/multierr"
 )
@@ -107,7 +106,7 @@ type Task struct {
 }
 
 func (t *Task) String() string {
-	return fmt.Sprintf("%s %s/%s", t.ClusterID, t.Type, t.ID)
+	return fmt.Sprintf("%s/%s", t.Type, t.ID)
 }
 
 func (t *Task) Validate() error {
@@ -214,7 +213,7 @@ func newRunFromTaskInfo(ti taskInfo) *Run {
 		Type:      ti.TaskType,
 		TaskID:    ti.TaskID,
 		ID:        uuid.NewTime(),
-		StartTime: timeutc.Now(),
+		StartTime: now(),
 		Status:    StatusRunning,
 	}
 }

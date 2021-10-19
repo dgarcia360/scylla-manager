@@ -3,6 +3,7 @@
 package scheduler
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/derekparker/trie"
@@ -40,6 +41,10 @@ func (ti taskInfo) key() string {
 
 func (ti taskInfo) nameKey() string {
 	return strings.ToLower(toStr(taskNamePfx) + ti.TaskName + toStr(taskNameSep) + ti.ClusterID.String())
+}
+
+func (ti taskInfo) String() string {
+	return fmt.Sprintf("%s/%s", ti.TaskType, ti.TaskID)
 }
 
 type resolver struct {

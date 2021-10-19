@@ -382,6 +382,14 @@ func (s *Service) run(ctx scheduler.RunContext) (runErr error) {
 		return errors.Wrap(err, "put run")
 	}
 	s.metrics.BeginRun(ti.ClusterID, ti.TaskType.String(), ti.TaskID)
+	runCtx := log.WithTraceID(ctx)
+	if !ti.TaskType.isHealthCheck() {
+		s.logger.Info(runCtx, "Run started",
+			"cluster_id", ti.ClusterID,
+			"task", ti,
+			"retry", ctx.Retry,
+		)
+	}
 
 	defer func() {
 		r.Status = statusFromError(runErr)
@@ -393,12 +401,30 @@ func (s *Service) run(ctx scheduler.RunContext) (runErr error) {
 		}
 		r.EndTime = pointer.TimePtr(now())
 		if err := s.putRun(r); err != nil {
-			s.logger.Error(ctx, "Cannot update the run",
+			s.logger.Error(runCtx, "Cannot update the run",
 				"run", r,
 				"error", err,
 			)
 		}
 		s.metrics.EndRun(ti.ClusterID, ti.TaskType.String(), ti.TaskID, r.Status.String())
+		if !ti.TaskType.isHealthCheck() {
+			if r.Status == StatusError {
+				s.logger.Error(runCtx, "Run ended with ERROR",
+					"cluster_id", ti.ClusterID,
+					"task", ti,
+					"status", r.Status,
+					"cause", r.Cause,
+					"duration", r.EndTime.Sub(r.StartTime),
+				)
+			} else {
+				s.logger.Info(runCtx, "Run ended",
+					"cluster_id", ti.ClusterID,
+					"task", ti,
+					"status", r.Status,
+					"duration", r.EndTime.Sub(r.StartTime),
+				)
+			}
+		}
 	}()
 
 	if ctx.Properties == nil {
@@ -408,13 +434,13 @@ func (s *Service) run(ctx scheduler.RunContext) (runErr error) {
 		ctx.Properties = jsonutil.Set(ctx.Properties, "continue", false)
 	}
 	if d != nil {
-		p, err := d(ctx, ti.ClusterID, ti.TaskID, ctx.Properties)
+		p, err := d(runCtx, ti.ClusterID, ti.TaskID, ctx.Properties)
 		if err != nil {
 			return errors.Wrap(err, "decorate properties")
 		}
 		ctx.Properties = p
 	}
-	return s.mustRunner(ti.TaskType).Run(ctx.Context, ti.ClusterID, ti.TaskID, r.ID, ctx.Properties)
+	return s.mustRunner(ti.TaskType).Run(runCtx, ti.ClusterID, ti.TaskID, r.ID, ctx.Properties)
 }
 
 func (s *Service) putRun(r *Run) error {
